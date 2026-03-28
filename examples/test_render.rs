@@ -11,10 +11,10 @@ use embedded_graphics::primitives::Rectangle;
 use embedded_text::TextBox;
 use std::path::Path;
 
-const DIN_8: MicroFont = include_font!("fonts/dinroundpro.otf", size = 16, bpp = 8);
-const DIN_4: MicroFont = include_font!("fonts/dinroundpro.otf", size = 16, bpp = 4);
-const DIN_2: MicroFont = include_font!("fonts/dinroundpro.otf", size = 16, bpp = 2);
-const DIN_1: MicroFont = include_font!("fonts/dinroundpro.otf", size = 16, bpp = 1);
+const INTER_8: MicroFont = include_font!("fonts/Inter.ttf", size = 16, bpp = 8);
+const INTER_4: MicroFont = include_font!("fonts/Inter.ttf", size = 16, bpp = 4);
+const INTER_2: MicroFont = include_font!("fonts/Inter.ttf", size = 16, bpp = 2);
+const INTER_1: MicroFont = include_font!("fonts/Inter.ttf", size = 16, bpp = 1);
 
 fn main() {
     let mut display = BitmapTarget::<Gray4>::new(320, 240);
@@ -22,10 +22,10 @@ fn main() {
     // Compare bpp levels at native 16px
     let mut y = 5;
     for (font, label) in [
-        (&DIN_8, "8bpp anti-aliased text"),
-        (&DIN_4, "4bpp anti-aliased text"),
-        (&DIN_2, "2bpp anti-aliased text"),
-        (&DIN_1, "1bpp binary text"),
+        (&INTER_8, "8bpp anti-aliased text"),
+        (&INTER_4, "4bpp anti-aliased text"),
+        (&INTER_2, "2bpp anti-aliased text"),
+        (&INTER_1, "1bpp binary text"),
     ] {
         let style = MicroFontStyle::new(font, Gray4::WHITE);
         TextBox::new(
@@ -48,6 +48,6 @@ fn main() {
     .draw(&mut display)
     .unwrap();
 
-    display.export_bmp(Path::new("screenshots/test_render.bmp")).unwrap();
-    println!("Exported screenshots/test_render.bmp");
+    display.export_bmp(Path::new("/tmp/test_render.bmp")).unwrap();
+    println!("Exported  /tmp/test_render.bmp");
 }

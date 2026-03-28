@@ -15,10 +15,10 @@ use embedded_graphics_simulator::{
     OutputSettingsBuilder, SimulatorDisplay, SimulatorEvent, Window,
 };
 
-const DIN_8: MicroFont = include_font!("fonts/dinroundpro.otf", size = 12, bpp = 2);
-const DIN_4: MicroFont = include_font!("fonts/dinroundpro.otf", size = 16, bpp = 4);
-const DIN_2: MicroFont = include_font!("fonts/dinroundpro.otf", size = 16, bpp = 2);
-const DIN_1: MicroFont = include_font!("fonts/dinroundpro.otf", size = 16, bpp = 1);
+const INTER_8: MicroFont = include_font!("fonts/Inter.ttf", size = 12, bpp = 2);
+const INTER_4: MicroFont = include_font!("fonts/Inter.ttf", size = 16, bpp = 4);
+const INTER_2: MicroFont = include_font!("fonts/Inter.ttf", size = 16, bpp = 2);
+const INTER_1: MicroFont = include_font!("fonts/Inter.ttf", size = 16, bpp = 1);
 
 fn main() {
     let mut display = SimulatorDisplay::<Gray4>::new(Size::new(600, 400));
@@ -26,10 +26,10 @@ fn main() {
     // Compare bpp levels at native 16px
     let mut y = 5;
     for (font, label) in [
-        (&DIN_8, "8bpp anti-aliased text"),
-        (&DIN_4, "4bpp anti-aliased text"),
-        (&DIN_2, "2bpp anti-aliased text"),
-        (&DIN_1, "1bpp binary text"),
+        (&INTER_8, "8bpp anti-aliased text"),
+        (&INTER_4, "4bpp anti-aliased text"),
+        (&INTER_2, "2bpp anti-aliased text"),
+        (&INTER_1, "1bpp binary text"),
     ] {
         let style = MicroFontStyle::new(font, Gray4::BLACK);
         TextBox::new(
@@ -43,7 +43,7 @@ fn main() {
     }
 
     // Scaled 2×
-    let style_2x = MicroFontStyle::new(&DIN_4, Gray4::new(0x0A)).scaled(2);
+    let style_2x = MicroFontStyle::new(&INTER_4, Gray4::new(0x0A)).scaled(2);
     TextBox::new(
         "Scaled 2x with word wrap!",
         Rectangle::new(Point::new(10, y + 5), Size::new(300, 130)),
@@ -72,7 +72,7 @@ fn main() {
 macro_rules! mstyle {
     ($size:expr, $bpp:expr, $color:expr, $scale:expr) => {
         MicroFontStyle::new(
-            &include_font!("fonts/dinroundpro.otf", size = $size, bpp = $bpp),
+            &include_font!("fonts/Inter.ttf", size = $size, bpp = $bpp),
             $color,
         )
         .scaled($scale)
