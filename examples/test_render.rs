@@ -1,44 +1,53 @@
-//! Test rendering — font.at_size() API for easy size experimentation.
-//! Fonts are loaded via include_font! — just change the path/size/bpp.
+//! Test rendering — MicroFontStyle + embedded-text TextBox with Gray4 display.
 
-use microface::Screen;
-use microface::color::GraphicsColorMode;
-use microface::element::Element;
-use microface::widgets::primitives::Rect;
-use microface::widgets::layout::HStack;
-use microface::render::BitmapTarget;
+use microface::fonts::{MicroFont, MicroFontStyle};
 use microface::include_font;
-use microface::fonts::GrayFont;
+use microface::render::BitmapTarget;
 
-use embedded_graphics::geometry::Point;
-use embedded_graphics::pixelcolor::Rgb565;
-use embedded_graphics::prelude::RgbColor;
+use embedded_graphics::geometry::{Point, Size};
+use embedded_graphics::pixelcolor::Gray4;
+use embedded_graphics::prelude::*;
+use embedded_graphics::primitives::Rectangle;
+use embedded_text::TextBox;
 use std::path::Path;
 
-// Fonts are rasterized at compile time — just point at a file
-const GOOGLE_SANS_CODE_32: GrayFont = include_font!("fonts/GoudyBookletter1911.ttf", size = 32, bpp = 2);
+const DIN_8: MicroFont = include_font!("fonts/dinroundpro.otf", size = 16, bpp = 8);
+const DIN_4: MicroFont = include_font!("fonts/dinroundpro.otf", size = 16, bpp = 4);
+const DIN_2: MicroFont = include_font!("fonts/dinroundpro.otf", size = 16, bpp = 2);
+const DIN_1: MicroFont = include_font!("fonts/dinroundpro.otf", size = 16, bpp = 1);
 
 fn main() {
-    let screen = Screen::new(320, 240);
-    let mut display = BitmapTarget::new(screen.width, screen.height);
+    let mut display = BitmapTarget::<Gray4>::new(320, 240);
 
-    let ui = HStack::new()
-        .child(Element::Rect(Rect::new().color(GraphicsColorMode::BLACK)))
-        .child(Element::Rect(Rect::new().color(GraphicsColorMode::BLACK)));
-    ui.paint(screen.bounds(), &mut display).unwrap();
+    // Compare bpp levels at native 16px
+    let mut y = 5;
+    for (font, label) in [
+        (&DIN_8, "8bpp anti-aliased text"),
+        (&DIN_4, "4bpp anti-aliased text"),
+        (&DIN_2, "2bpp anti-aliased text"),
+        (&DIN_1, "1bpp binary text"),
+    ] {
+        let style = MicroFontStyle::new(font, Gray4::WHITE);
+        TextBox::new(
+            label,
+            Rectangle::new(Point::new(10, y), Size::new(300, 30)),
+            style,
+        )
+        .draw(&mut display)
+        .unwrap();
+        y += 25;
+    }
 
-    let black = Rgb565::new(0, 0, 0);
+    // Scaled 2×
+    let style_2x = MicroFontStyle::new(&DIN_4, Gray4::new(0x0A)).scaled(2);
+    TextBox::new(
+        "Scaled 2x with word wrap!",
+        Rectangle::new(Point::new(10, y + 5), Size::new(300, 130)),
+        style_2x,
+    )
+    .draw(&mut display)
+    .unwrap();
 
-    // Just pick a size — at_size() figures out scale/divisor automatically
-    let f_medium = GOOGLE_SANS_CODE_32.at_size(32);
-
-    f_medium.draw("Any IP address", Point::new(10, 10), Rgb565::GREEN, black, &mut display).unwrap();
-    f_medium.draw("can be either a ", Point::new(10, 40), Rgb565::GREEN, black, &mut display).unwrap();
-    f_medium.draw("version four or a", Point::new(10, 70), Rgb565::GREEN, black, &mut display).unwrap();
-    f_medium.draw("version six address,", Point::new(10, 100), Rgb565::GREEN, black, &mut display).unwrap();
-    f_medium.draw("but not both", Point::new(10, 130), Rgb565::GREEN, black, &mut display).unwrap();
-    f_medium.draw("at the same time.", Point::new(10, 160), Rgb565::GREEN, black, &mut display).unwrap();
-
-    display.export_bmp(Path::new("/tmp/test_render.bmp")).unwrap();
-    println!("Exported /tmp/test_render.bmp");
+    display.export_bmp(Path::new("screenshots/test_render.bmp")).unwrap();
+    println!("Exported screenshots/test_render.bmp");
 }

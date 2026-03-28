@@ -2,7 +2,7 @@
 //!
 //! Provides the `include_font!` proc macro that reads a TTF/OTF font file,
 //! rasterizes ASCII glyphs at the specified size and bit depth, and emits
-//! a `GrayFont` const — all at compile time.
+//! a `MicroFont` const — all at compile time.
 //!
 //! Uses [`fontdue`] for font parsing and glyph rasterization.
 
@@ -160,13 +160,13 @@ fn pack_pixels(raw: &[u8], bpp: u8) -> Vec<u8> {
 
 /// Compile-time font rasterization.
 ///
-/// Reads a TTF/OTF font, rasterizes ASCII 32–126, and emits a `GrayFont` const.
+/// Reads a TTF/OTF font, rasterizes ASCII 32–126, and emits a `MicroFont` const.
 ///
 /// ```ignore
-/// use microface::{include_font, fonts::GrayFont};
+/// use microface::{include_font, fonts::MicroFont};
 ///
-/// const MONO: GrayFont = include_font!("fonts/abc.ttf", size = 24, bpp = 4);
-/// const OTHER: GrayFont = include_font!("fonts/abc.otf", size = 32, bpp = 2);
+/// const MONO: MicroFont = include_font!("fonts/mono.ttf", size = 24, bpp = 4);
+/// const DIN: MicroFont = include_font!("fonts/din.otf", size = 32, bpp = 2);
 /// ```
 #[proc_macro]
 pub fn include_font(input: TokenStream) -> TokenStream {
@@ -203,7 +203,7 @@ pub fn include_font(input: TokenStream) -> TokenStream {
 
     quote! {{
         const _DATA: &[u8; #packed_len] = &[#(#data_tokens),*];
-        GrayFont {
+        MicroFont {
             data: _DATA,
             char_width: #cw,
             char_height: #ch,

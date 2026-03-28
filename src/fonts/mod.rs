@@ -1,323 +1,242 @@
 //! Bitmap fonts for microface.
 //!
 //! Fonts are rasterized at compile time via the `include_font!` proc macro.
-//! Just point at a TTF/OTF file and specify size + bpp — no external tools needed.
-//!
-//! # Usage
+//! Works with any display: AMOLED, LCD, e-ink (color, grayscale, or B&W).
 //!
 //! ```ignore
-//! use microface::{include_font, fonts::GrayFont};
+//! use microface::{include_font, fonts::{MicroFont, MicroFontStyle}};
+//! use embedded_text::TextBox;
 //!
-//! // Drop any TTF/OTF in your project and reference it — that's it
-//! const MY_FONT: GrayFont = include_font!("fonts/myfont.ttf", size = 24, bpp = 4);
+//! const DIN: MicroFont = include_font!("fonts/din.otf", size = 16, bpp = 4);
 //!
-//! // Use it
-//! MY_FONT.draw_string("Hello", pos, fg, bg, &mut display)?;
-//!
-//! // Or scale it
-//! MY_FONT.at_size(48).draw("Big text", pos, fg, bg, &mut display)?;
+//! let style = MicroFontStyle::new(&DIN, Rgb565::WHITE).scaled(2);
+//! TextBox::new("Wrapped text!", bounds, style).draw(&mut display)?;
 //! ```
 
-use embedded_graphics::geometry::Point;
-use embedded_graphics::pixelcolor::Rgb565;
+use core::fmt;
+
+use embedded_graphics::geometry::{Point, Size};
+use embedded_graphics::pixelcolor::Rgb888;
 use embedded_graphics::prelude::*;
+use embedded_graphics::primitives::Rectangle;
+use embedded_graphics::text::renderer::{CharacterStyle, TextMetrics, TextRenderer};
+use embedded_graphics::text::{Baseline, DecorationColor};
 
-// ── GrayFont ───────────────────────────────────────────────────────────────
+// ── MicroFont ──────────────────────────────────────────────────────────────
 
-/// An anti-aliased bitmap font with configurable bit depth.
-///
-/// Glyphs are stored in a grid (16 chars per row), packed at `bpp` bits per pixel
-/// (MSB-first). Supported bpp values: 1, 2, 4, 8.
-///
-/// - `bpp=8`: 1 byte per pixel, 256 alpha levels (no packing)
-/// - `bpp=4`: 2 pixels per byte, 16 alpha levels
-/// - `bpp=2`: 4 pixels per byte, 4 alpha levels
-/// - `bpp=1`: 8 pixels per byte, binary (on/off)
-pub struct GrayFont {
+/// An anti-aliased bitmap font with configurable bit depth (1/2/4/8 bpp).
+pub struct MicroFont {
     pub data: &'static [u8],
     pub char_width: u32,
     pub char_height: u32,
     pub cols_per_row: u32,
-    /// Width of the bitmap strip in pixels (not bytes).
     pub strip_width: u32,
     pub first_char: u8,
     pub last_char: u8,
-    /// Bits per pixel: 1, 2, 4, or 8.
     pub bpp: u8,
-    /// Per-glyph advance widths for proportional fonts.
-    /// If `None`, uses `char_width` for all glyphs (monospace).
-    /// Array of (last_char - first_char + 1) bytes, one per glyph.
     pub widths: Option<&'static [u8]>,
 }
 
-/// A font at a specific target pixel size, created from a base `GrayFont`.
-///
-/// Automatically determines whether to upscale or downscale from the base.
-/// ```ignore
-/// let small = DINROUNDPRO_32.at_size(16);  // downscale ÷2
-/// let big   = DINROUNDPRO_32.at_size(64);  // upscale ×2
-/// let native = DINROUNDPRO_32.at_size(32); // no scaling
-/// small.draw("Hello", pos, white, black, &mut display)?;
-/// ```
-pub struct FontAt<'a> {
-    font: &'a GrayFont,
-    target_height: u32,
-}
-
-impl<'a> FontAt<'a> {
-    /// Draw text at the configured target size.
-    pub fn draw<D>(
-        &self,
-        text: &str,
-        pos: Point,
-        fg: Rgb565,
-        bg: Rgb565,
-        target: &mut D,
-    ) -> Result<(), D::Error>
-    where
-        D: DrawTarget<Color = Rgb565>,
-    {
-        let base_h = self.font.char_height;
-        let target_h = self.target_height;
-
-        if target_h == base_h {
-            // Native size
-            self.font.draw_string(text, pos, fg, bg, target)
-        } else if target_h > base_h {
-            // Upscale
-            let scale = target_h / base_h;
-            self.font.draw_string_scaled(text, pos, fg, bg, scale.max(1), target)
-        } else {
-            // Downscale
-            let divisor = base_h / target_h;
-            self.font.draw_string_downscaled(text, pos, fg, bg, divisor.max(1), target)
-        }
+impl fmt::Debug for MicroFont {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MicroFont")
+            .field("char_width", &self.char_width)
+            .field("char_height", &self.char_height)
+            .field("bpp", &self.bpp)
+            .field("data_len", &self.data.len())
+            .finish()
     }
 }
 
-impl GrayFont {
-    /// Create a font at a specific target pixel height.
-    ///
-    /// Automatically picks upscale or downscale based on the base size.
-    /// For best results, use target sizes that are integer multiples or divisors
-    /// of the base height.
-    pub fn at_size(&self, target_height: u32) -> FontAt<'_> {
-        FontAt {
-            font: self,
-            target_height,
-        }
-    }
-
-    /// Get the advance width for a character (proportional or fixed).
+impl MicroFont {
     #[inline]
-    fn advance_width(&self, char_idx: u32) -> u32 {
+    pub fn advance_width(&self, char_idx: u32) -> u32 {
         match self.widths {
             Some(w) => w[char_idx as usize] as u32,
             None => self.char_width,
         }
     }
 
-    /// Read a single pixel's alpha value (0-255) from the packed bitmap.
     #[inline]
-    fn read_alpha(&self, pixel_index: usize) -> u32 {
+    pub fn read_alpha(&self, pixel_index: usize) -> u32 {
         match self.bpp {
             8 => self.data[pixel_index] as u32,
             4 => {
-                let byte_idx = pixel_index / 2;
-                let nibble = if pixel_index % 2 == 0 {
-                    (self.data[byte_idx] >> 4) & 0x0F
-                } else {
-                    self.data[byte_idx] & 0x0F
-                };
-                // Scale 0-15 → 0-255: val * 17
-                nibble as u32 * 17
+                let byte = self.data[pixel_index / 2];
+                (if pixel_index % 2 == 0 { byte >> 4 } else { byte & 0x0F }) as u32 * 17
             }
-            2 => {
-                let byte_idx = pixel_index / 4;
-                let slot = pixel_index % 4;
-                let shift = (3 - slot) * 2;
-                let val = (self.data[byte_idx] >> shift) & 0x03;
-                // Scale 0-3 → 0-255: val * 85
-                val as u32 * 85
-            }
-            1 => {
-                let byte_idx = pixel_index / 8;
-                let bit = pixel_index % 8;
-                let shift = 7 - bit;
-                let val = (self.data[byte_idx] >> shift) & 0x01;
-                // Scale 0-1 → 0-255
-                val as u32 * 255
-            }
+            2 => ((self.data[pixel_index / 4] >> ((3 - pixel_index % 4) * 2)) & 0x03) as u32 * 85,
+            1 => ((self.data[pixel_index / 8] >> (7 - pixel_index % 8)) & 0x01) as u32 * 255,
             _ => 0,
         }
     }
+}
 
-    /// Draw a string at the given position with the given color (native size).
-    /// Alpha-blends each glyph pixel against a background color.
-    pub fn draw_string<D>(
-        &self,
-        text: &str,
-        pos: Point,
-        fg: Rgb565,
-        bg: Rgb565,
-        target: &mut D,
-    ) -> Result<(), D::Error>
-    where
-        D: DrawTarget<Color = Rgb565>,
-    {
-        self.draw_string_scaled(text, pos, fg, bg, 1, target)
+// ── Alpha blending in Rgb888 space ─────────────────────────────────────────
+
+#[inline]
+fn blend(source: Rgb888, dest: Rgb888, alpha: u8) -> Rgb888 {
+    let a = alpha as u16;
+    let inv_a = 255 - a;
+    Rgb888::new(
+        ((source.r() as u16 * a + dest.r() as u16 * inv_a) / 255) as u8,
+        ((source.g() as u16 * a + dest.g() as u16 * inv_a) / 255) as u8,
+        ((source.b() as u16 * a + dest.b() as u16 * inv_a) / 255) as u8,
+    )
+}
+
+#[inline]
+fn blend_over_black(source: Rgb888, alpha: u8) -> Rgb888 {
+    let a = alpha as u16;
+    Rgb888::new(
+        (source.r() as u16 * a / 255) as u8,
+        (source.g() as u16 * a / 255) as u8,
+        (source.b() as u16 * a / 255) as u8,
+    )
+}
+
+// ── MicroFontStyle ─────────────────────────────────────────────────────────
+
+/// Styled font implementing `TextRenderer` + `CharacterStyle`.
+///
+/// Generic over any `PixelColor` that converts to/from `Rgb888`.
+/// Works with `Rgb565`, `Rgb888`, `Gray8`, `Gray4`, `BinaryColor`, etc.
+#[derive(Clone, Debug)]
+pub struct MicroFontStyle<'a, C> {
+    pub font: &'a MicroFont,
+    pub text_color: Option<C>,
+    pub background_color: Option<C>,
+    pub scale: u32,
+}
+
+impl<'a, C: PixelColor> MicroFontStyle<'a, C> {
+    pub fn new(font: &'a MicroFont, text_color: C) -> Self {
+        Self { font, text_color: Some(text_color), background_color: None, scale: 1 }
     }
 
-    /// Draw a string with integer scaling (upscale or downscale).
-    ///
-    /// `scale=1`: native size (e.g. 24px)
-    /// `scale=2`: upscale ×2 (24px → 48px, nearest-neighbor)
-    /// `scale=3`: upscale ×3 (24px → 72px)
-    ///
-    /// For downscaling, use `draw_string_downscaled` instead.
-    pub fn draw_string_scaled<D>(
-        &self,
-        text: &str,
-        pos: Point,
-        fg: Rgb565,
-        bg: Rgb565,
-        scale: u32,
-        target: &mut D,
-    ) -> Result<(), D::Error>
-    where
-        D: DrawTarget<Color = Rgb565>,
-    {
-        let scale = if scale == 0 { 1 } else { scale };
-        let mut cursor_x = pos.x;
+    pub fn with_background(font: &'a MicroFont, text_color: C, background_color: C) -> Self {
+        Self { font, text_color: Some(text_color), background_color: Some(background_color), scale: 1 }
+    }
+
+    pub fn scaled(mut self, factor: u32) -> Self { self.scale = factor.max(1); self }
+
+    fn effective_height(&self) -> u32 { self.font.char_height * self.scale }
+
+    fn baseline_offset(&self, baseline: Baseline) -> i32 {
+        let h = self.effective_height();
+        match baseline {
+            Baseline::Top => 0,
+            Baseline::Bottom => h.saturating_sub(1) as i32,
+            Baseline::Middle => (h.saturating_sub(1) / 2) as i32,
+            Baseline::Alphabetic => (h * 4 / 5) as i32,
+        }
+    }
+
+    fn string_width(&self, text: &str) -> u32 {
+        text.chars().map(|ch| {
+            let code = ch as u8;
+            if code < self.font.first_char || code > self.font.last_char {
+                self.font.char_width
+            } else {
+                self.font.advance_width((code - self.font.first_char) as u32)
+            }
+        }).sum::<u32>() * self.scale
+    }
+}
+
+// ── Generic TextRenderer for any PixelColor ↔ Rgb888 ──────────────────────
+
+impl<'a, C> TextRenderer for MicroFontStyle<'a, C>
+where
+    C: PixelColor + From<Rgb888>,
+    Rgb888: From<C>,
+{
+    type Color = C;
+
+    fn draw_string<D: DrawTarget<Color = C>>(
+        &self, text: &str, position: Point, baseline: Baseline, target: &mut D,
+    ) -> Result<Point, D::Error> {
+        let s = self.scale;
+        let top = position - Point::new(0, self.baseline_offset(baseline));
+        let mut cx = top.x;
+
+        let fg888 = self.text_color.map(Rgb888::from);
+        let bg888 = self.background_color.map(Rgb888::from);
+        let (has_fg, has_bg) = (fg888.is_some(), bg888.is_some());
 
         for ch in text.chars() {
             let code = ch as u8;
-            if code < self.first_char || code > self.last_char {
-                cursor_x += (self.char_width * scale) as i32;
+            if code < self.font.first_char || code > self.font.last_char {
+                let w = self.font.char_width * s;
+                if has_bg {
+                    target.fill_solid(&Rectangle::new(Point::new(cx, top.y), Size::new(w, self.effective_height())), self.background_color.unwrap())?;
+                }
+                cx += w as i32;
                 continue;
             }
-            let idx = (code - self.first_char) as u32;
-            let grid_col = idx % self.cols_per_row;
-            let grid_row = idx / self.cols_per_row;
-            let glyph_x = grid_col * self.char_width;
-            let glyph_y = grid_row * self.char_height;
+            let idx = (code - self.font.first_char) as u32;
+            let gx = (idx % self.font.cols_per_row) * self.font.char_width;
+            let gy = (idx / self.font.cols_per_row) * self.font.char_height;
 
-            let fg_r = fg.r() as u32;
-            let fg_g = fg.g() as u32;
-            let fg_b = fg.b() as u32;
-            let bg_r = bg.r() as u32;
-            let bg_g = bg.g() as u32;
-            let bg_b = bg.b() as u32;
+            for row in 0..self.font.char_height {
+                for col in 0..self.font.char_width {
+                    let alpha = self.font.read_alpha(((gy + row) * self.font.strip_width + gx + col) as usize);
 
-            for row in 0..self.char_height {
-                for col in 0..self.char_width {
-                    let src_x = glyph_x + col;
-                    let src_y = glyph_y + row;
-                    let pixel_index = (src_y * self.strip_width + src_x) as usize;
-                    let alpha = self.read_alpha(pixel_index);
+                    let color: Option<C> = if alpha == 0 {
+                        if has_bg { Some(self.background_color.unwrap()) } else { None }
+                    } else if alpha == 255 && has_fg {
+                        Some(self.text_color.unwrap())
+                    } else if has_fg {
+                        let blended = if has_bg {
+                            blend(fg888.unwrap(), bg888.unwrap(), alpha as u8)
+                        } else {
+                            blend_over_black(fg888.unwrap(), alpha as u8)
+                        };
+                        Some(C::from(blended))
+                    } else { None };
 
-                    if alpha > 0 {
-                        let r = (fg_r * alpha + bg_r * (255 - alpha)) / 255;
-                        let g = (fg_g * alpha + bg_g * (255 - alpha)) / 255;
-                        let b = (fg_b * alpha + bg_b * (255 - alpha)) / 255;
-                        let blended = Rgb565::new(r as u8, g as u8, b as u8);
-
-                        let base_x = cursor_x + (col * scale) as i32;
-                        let base_y = pos.y + (row * scale) as i32;
-                        for sy in 0..scale {
-                            for sx in 0..scale {
-                                Pixel(Point::new(base_x + sx as i32, base_y + sy as i32), blended)
-                                    .draw(target)?;
-                            }
-                        }
+                    if let Some(c) = color {
+                        let (bx, by) = (cx + (col * s) as i32, top.y + (row * s) as i32);
+                        if s == 1 { Pixel(Point::new(bx, by), c).draw(target)?; }
+                        else { target.fill_solid(&Rectangle::new(Point::new(bx, by), Size::new(s, s)), c)?; }
                     }
                 }
             }
-            cursor_x += (self.advance_width(idx) * scale) as i32;
+            cx += (self.font.advance_width(idx) * s) as i32;
         }
-
-        Ok(())
+        Ok(Point::new(cx, position.y))
     }
 
-    /// Draw a string downscaled by an integer divisor (box filter averaging).
-    ///
-    /// `divisor=1`: native size (24px)
-    /// `divisor=2`: half size (24px → 12px, smooth box-filtered)
-    /// `divisor=3`: third size (24px → 8px)
-    ///
-    /// Each output pixel is the average of a divisor×divisor block of source pixels.
-    /// This produces smooth, high-quality downscaled text.
-    pub fn draw_string_downscaled<D>(
-        &self,
-        text: &str,
-        pos: Point,
-        fg: Rgb565,
-        bg: Rgb565,
-        divisor: u32,
-        target: &mut D,
-    ) -> Result<(), D::Error>
-    where
-        D: DrawTarget<Color = Rgb565>,
-    {
-        let divisor = if divisor == 0 { 1 } else { divisor };
-        if divisor == 1 {
-            return self.draw_string(text, pos, fg, bg, target);
-        }
-
-        let out_h = self.char_height / divisor;
-        let mut cursor_x = pos.x;
-
-        for ch in text.chars() {
-            let code = ch as u8;
-            if code < self.first_char || code > self.last_char {
-                cursor_x += (self.char_width / divisor) as i32;
-                continue;
-            }
-            let idx = (code - self.first_char) as u32;
-            let grid_col = idx % self.cols_per_row;
-            let grid_row = idx / self.cols_per_row;
-            let glyph_x = grid_col * self.char_width;
-            let glyph_y = grid_row * self.char_height;
-            let out_w = self.advance_width(idx) / divisor;
-
-            let fg_r = fg.r() as u32;
-            let fg_g = fg.g() as u32;
-            let fg_b = fg.b() as u32;
-            let bg_r = bg.r() as u32;
-            let bg_g = bg.g() as u32;
-            let bg_b = bg.b() as u32;
-            let area = divisor * divisor;
-
-            for out_row in 0..out_h {
-                for out_col in 0..(self.char_width / divisor) {
-                    // Average a divisor×divisor block of source pixels
-                    let mut alpha_sum = 0u32;
-                    for dy in 0..divisor {
-                        for dx in 0..divisor {
-                            let src_x = glyph_x + out_col * divisor + dx;
-                            let src_y = glyph_y + out_row * divisor + dy;
-                            let pixel_index = (src_y * self.strip_width + src_x) as usize;
-                            alpha_sum += self.read_alpha(pixel_index);
-                        }
-                    }
-                    let alpha = alpha_sum / area;
-
-                    if alpha > 0 {
-                        let r = (fg_r * alpha + bg_r * (255 - alpha)) / 255;
-                        let g = (fg_g * alpha + bg_g * (255 - alpha)) / 255;
-                        let b = (fg_b * alpha + bg_b * (255 - alpha)) / 255;
-                        let blended = Rgb565::new(r as u8, g as u8, b as u8);
-
-                        Pixel(
-                            Point::new(cursor_x + out_col as i32, pos.y + out_row as i32),
-                            blended,
-                        ).draw(target)?;
-                    }
-                }
-            }
-            cursor_x += out_w as i32;
-        }
-
-        Ok(())
+    fn draw_whitespace<D: DrawTarget<Color = C>>(
+        &self, width: u32, position: Point, baseline: Baseline, target: &mut D,
+    ) -> Result<Point, D::Error> {
+        let top = position - Point::new(0, self.baseline_offset(baseline));
+        if width > 0 { if let Some(bg) = self.background_color {
+            target.fill_solid(&Rectangle::new(top, Size::new(width, self.effective_height())), bg)?;
+        }}
+        Ok(Point::new(position.x + width as i32, position.y))
     }
+
+    fn measure_string(&self, text: &str, position: Point, baseline: Baseline) -> TextMetrics {
+        let top = position - Point::new(0, self.baseline_offset(baseline));
+        let w = self.string_width(text);
+        TextMetrics {
+            bounding_box: Rectangle::new(top, Size::new(w, self.effective_height())),
+            next_position: Point::new(position.x + w as i32, position.y),
+        }
+    }
+
+    fn line_height(&self) -> u32 { self.effective_height() }
+}
+
+impl<'a, C> CharacterStyle for MicroFontStyle<'a, C>
+where
+    C: PixelColor + From<Rgb888>,
+    Rgb888: From<C>,
+{
+    type Color = C;
+    fn set_text_color(&mut self, c: Option<Self::Color>) { self.text_color = c; }
+    fn set_background_color(&mut self, c: Option<Self::Color>) { self.background_color = c; }
+    fn set_underline_color(&mut self, _: DecorationColor<Self::Color>) {}
+    fn set_strikethrough_color(&mut self, _: DecorationColor<Self::Color>) {}
 }

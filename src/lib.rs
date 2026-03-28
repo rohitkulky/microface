@@ -26,8 +26,8 @@ pub use basis::foundation::screen::Screen;
 /// # Example
 ///
 /// ```ignore
-/// use microface::{include_font, fonts::GrayFont};
+/// use microface::{include_font, fonts::MicroFont};
 ///
-/// const MY_FONT: GrayFont = include_font!("fonts/myfont.ttf", size = 24, bpp = 4);
+/// const MY_FONT: MicroFont = include_font!("fonts/myfont.ttf", size = 24, bpp = 4);
 /// ```
 pub use microface_macros::include_font;
