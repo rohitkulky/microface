@@ -3,8 +3,9 @@
 //! Fonts are rasterized at compile time via the `include_font!` proc macro.
 //! Works with any display: AMOLED, LCD, e-ink (color, grayscale, or B&W).
 //!
-//! Rendering uses a **16-entry LUT** built once per draw call and
-//! `fill_contiguous` for single-call-per-glyph rendering.
+//! Rendering uses a **16-entry LUT** built once per draw call,
+//! `fill_contiguous` for single-call-per-glyph rendering,
+//! tight per-glyph bounding boxes, and optional kerning.
 //!
 //! ```ignore
 //! use microface::{include_font, fonts::{MicroFont, MicroFontStyle}};
@@ -40,6 +41,10 @@ pub struct MicroFont {
     pub last_char: u8,
     pub bpp: u8,
     pub widths: Option<&'static [u8]>,
+    /// Tight bounding boxes: flat [x_off, y_off, tight_w, tight_h] × glyph_count.
+    pub bboxes: &'static [u8],
+    /// Kerning pairs: flat [left_idx, right_idx, adjustment_as_u8] triples, or None.
+    pub kerning: Option<&'static [u8]>,
 }
 
 impl fmt::Debug for MicroFont {
@@ -49,6 +54,7 @@ impl fmt::Debug for MicroFont {
             .field("char_height", &self.char_height)
             .field("bpp", &self.bpp)
             .field("data_len", &self.data.len())
+            .field("has_kerning", &self.kerning.is_some())
             .finish()
     }
 }
@@ -60,6 +66,36 @@ impl MicroFont {
             Some(w) => w[char_idx as usize] as u32,
             None => self.char_width,
         }
+    }
+
+    /// Tight bounding box for a glyph: (x_off, y_off, tight_w, tight_h).
+    #[inline]
+    pub fn glyph_bbox(&self, char_idx: u32) -> (u32, u32, u32, u32) {
+        let base = (char_idx as usize) * 4;
+        if base + 3 < self.bboxes.len() {
+            (self.bboxes[base] as u32, self.bboxes[base + 1] as u32,
+             self.bboxes[base + 2] as u32, self.bboxes[base + 3] as u32)
+        } else {
+            (0, 0, self.char_width, self.char_height)
+        }
+    }
+
+    /// Kerning adjustment between two glyph indices (in pixels, signed).
+    #[inline]
+    pub fn kern(&self, left_idx: u32, right_idx: u32) -> i32 {
+        let table = match self.kerning {
+            Some(k) => k,
+            None => return 0,
+        };
+        let (l, r) = (left_idx as u8, right_idx as u8);
+        let mut i = 0;
+        while i + 2 < table.len() {
+            if table[i] == l && table[i + 1] == r {
+                return table[i + 2] as i8 as i32;
+            }
+            i += 3;
+        }
+        0
     }
 
     /// Read full 0–255 alpha (legacy, kept for compatibility).
@@ -126,17 +162,17 @@ fn build_palette<C: PixelColor + From<Rgb888>>(fg: Rgb888, bg: Option<Rgb888>) -
     pal
 }
 
-// ── GlyphIterator (unified for scale=1 and scale>1) ───────────────────────
+// ── GlyphIterator (tight bbox aware, unified scale) ───────────────────────
 
-/// Yields pre-blended colors for a glyph rectangle, with optional scaling.
+/// Yields pre-blended colors for a glyph's tight bounding box, with scaling.
 /// Used with `fill_contiguous` for single-call-per-glyph rendering.
 struct GlyphIter<'a, C> {
     font: &'a MicroFont,
     pal: [C; PALETTE_SIZE],
-    gx: u32, gy: u32,       // glyph origin in atlas
-    w: u32, h: u32,          // source dimensions
+    gx: u32, gy: u32,       // tight bbox origin in atlas (cell_x + x_off, cell_y + y_off)
+    w: u32, h: u32,          // tight bbox dimensions
     scale: u32,
-    cur: u32,                 // current output pixel
+    cur: u32,
 }
 
 impl<'a, C: PixelColor + Copy> Iterator for GlyphIter<'a, C> {
@@ -195,14 +231,24 @@ impl<'a, C: PixelColor> MicroFontStyle<'a, C> {
     }
 
     fn string_width(&self, text: &str) -> u32 {
-        text.chars().map(|ch| {
+        let mut width = 0u32;
+        let mut prev_idx: Option<u32> = None;
+        for ch in text.chars() {
             let code = ch as u8;
             if code < self.font.first_char || code > self.font.last_char {
-                self.font.char_width
+                width += self.font.char_width;
+                prev_idx = None;
             } else {
-                self.font.advance_width((code - self.font.first_char) as u32)
+                let idx = (code - self.font.first_char) as u32;
+                if let Some(pi) = prev_idx {
+                    let k = self.font.kern(pi, idx);
+                    width = (width as i32 + k).max(0) as u32;
+                }
+                width += self.font.advance_width(idx);
+                prev_idx = Some(idx);
             }
-        }).sum::<u32>() * self.scale
+        }
+        width * self.scale
     }
 }
 
@@ -229,6 +275,8 @@ where
         // Build palette ONCE for the entire string (16 blends, not 256/glyph)
         let palette: Option<[C; PALETTE_SIZE]> = fg888.map(|fg| build_palette(fg, bg888));
 
+        let mut prev_idx: Option<u32> = None;
+
         for ch in text.chars() {
             let code = ch as u8;
             if code < self.font.first_char || code > self.font.last_char {
@@ -237,34 +285,57 @@ where
                     target.fill_solid(&Rectangle::new(Point::new(cx, top.y), Size::new(w, self.effective_height())), self.background_color.unwrap())?;
                 }
                 cx += w as i32;
+                prev_idx = None;
                 continue;
             }
 
             let idx = (code - self.font.first_char) as u32;
-            let gx = (idx % self.font.cols_per_row) * self.font.char_width;
-            let gy = (idx / self.font.cols_per_row) * self.font.char_height;
+
+            // Apply kerning
+            if let Some(pi) = prev_idx {
+                cx += (self.font.kern(pi, idx) * s as i32) as i32;
+            }
+            prev_idx = Some(idx);
+
+            let cell_gx = (idx % self.font.cols_per_row) * self.font.char_width;
+            let cell_gy = (idx / self.font.cols_per_row) * self.font.char_height;
             let advance = self.font.advance_width(idx);
+            let (bbox_xo, bbox_yo, bbox_w, bbox_h) = self.font.glyph_bbox(idx);
 
             if let Some(ref pal) = palette {
                 if has_bg {
-                    // FAST PATH: one fill_contiguous call per glyph
-                    let area = Rectangle::new(Point::new(cx, top.y), Size::new(advance * s, self.font.char_height * s));
-                    target.fill_contiguous(&area, GlyphIter {
-                        font: self.font, pal: *pal, gx, gy,
-                        w: advance, h: self.font.char_height, scale: s, cur: 0,
-                    })?;
+                    // Fill full advance rectangle with background first
+                    let full_area = Rectangle::new(Point::new(cx, top.y), Size::new(advance * s, self.font.char_height * s));
+                    target.fill_solid(&full_area, self.background_color.unwrap())?;
+
+                    // Then draw only the tight bbox with fill_contiguous
+                    if bbox_w > 0 && bbox_h > 0 {
+                        let tight_area = Rectangle::new(
+                            Point::new(cx + (bbox_xo * s) as i32, top.y + (bbox_yo * s) as i32),
+                            Size::new(bbox_w * s, bbox_h * s),
+                        );
+                        target.fill_contiguous(&tight_area, GlyphIter {
+                            font: self.font, pal: *pal,
+                            gx: cell_gx + bbox_xo, gy: cell_gy + bbox_yo,
+                            w: bbox_w, h: bbox_h, scale: s, cur: 0,
+                        })?;
+                    }
                 } else {
                     // No background: skip transparent pixels, still use LUT
-                    for row in 0..self.font.char_height {
-                        for col in 0..advance {
-                            let pi = ((gy + row) * self.font.strip_width + gx + col) as usize;
-                            let ai = self.font.read_alpha_index(pi) as usize;
-                            if ai == 0 { continue; }
-                            let c = pal[ai];
-                            if s == 1 {
-                                Pixel(Point::new(cx + col as i32, top.y + row as i32), c).draw(target)?;
-                            } else {
-                                target.fill_solid(&Rectangle::new(Point::new(cx + (col * s) as i32, top.y + (row * s) as i32), Size::new(s, s)), c)?;
+                    if bbox_w > 0 && bbox_h > 0 {
+                        for row in 0..bbox_h {
+                            for col in 0..bbox_w {
+                                let pi = ((cell_gy + bbox_yo + row) * self.font.strip_width + cell_gx + bbox_xo + col) as usize;
+                                let ai = self.font.read_alpha_index(pi) as usize;
+                                if ai == 0 { continue; }
+                                let c = pal[ai];
+                                let px = cx + ((bbox_xo + col) * s) as i32;
+                                let py = top.y + ((bbox_yo + row) * s) as i32;
+                                if s == 1 {
+                                    Pixel(Point::new(px, py), c).draw(target)?;
+                                } else {
+                                    target.fill_solid(&Rectangle::new(Point::new(px, py), Size::new(s, s)), c)?;
+                                }
                             }
                         }
                     }
