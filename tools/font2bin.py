@@ -5,22 +5,22 @@ Auto-detects input format by file extension. Uses Pillow for rendering.
 Supports configurable bits-per-pixel (1, 2, 4, or 8) for size/quality tradeoff.
 
 Single size:
-    python3 tools/font2bin.py fonts/abc.ttf 24 abc --bpp 4
+    python3 tools/font2bin.py fonts/monosten.ttf 24 monosten --bpp 4
 
 Multiple sizes (packed into one .bin):
-    python3 tools/font2bin.py fonts/abc.ttf 16,24,32 abc --bpp 4
+    python3 tools/font2bin.py fonts/monosten.ttf 16,24,32 monosten --bpp 4
 
 Outputs (single size):
-    src/fonts/data/abc.bin         — packed grayscale bitmap
-    src/fonts/abc.rs               — Rust GrayFont definition
-    fonts/abc_preview.png          — visual preview
+    src/fonts/data/monosten.bin         — packed grayscale bitmap
+    src/fonts/monosten.rs               — Rust GrayFont definition
+    fonts/monosten_preview.png          — visual preview
 
 Outputs (multi-size):
-    src/fonts/data/abc.bin         — all sizes concatenated
-    src/fonts/abc.rs               — Rust module with all size consts
-    fonts/abc_16_preview.png       — preview per size
-    fonts/abc_24_preview.png
-    fonts/abc_32_preview.png
+    src/fonts/data/monosten.bin         — all sizes concatenated
+    src/fonts/monosten.rs               — Rust module with all size consts
+    fonts/monosten_16_preview.png       — preview per size
+    fonts/monosten_24_preview.png
+    fonts/monosten_32_preview.png
 """
 
 import argparse
@@ -166,7 +166,7 @@ def main():
     )
     parser.add_argument("font_path", help="Path to font file (TTF, OTF, or BDF)")
     parser.add_argument("pixel_sizes", help="Font size(s) in pixels, comma-separated (e.g. '16,24,32')")
-    parser.add_argument("name", help="Font family name (e.g. abc)")
+    parser.add_argument("name", help="Font family name (e.g. monosten)")
     parser.add_argument(
         "--bpp", type=int, default=4, choices=[1, 2, 4, 8],
         help="Bits per pixel (default: 4). Lower = smaller file, fewer alpha levels."
