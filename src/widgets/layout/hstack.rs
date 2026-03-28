@@ -1,3 +1,6 @@
+use alloc::vec;
+use alloc::vec::Vec;
+
 use embedded_graphics::geometry::{Point, Size};
 use embedded_graphics::prelude::DrawTarget;
 use embedded_graphics::primitives::Rectangle;

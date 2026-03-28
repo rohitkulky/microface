@@ -1,3 +1,8 @@
+extern crate std;
+
+use alloc::vec;
+use alloc::vec::Vec;
+
 use embedded_graphics::prelude::*;
 use embedded_graphics::pixelcolor::Rgb888;
 use embedded_graphics::geometry::Size;

@@ -12,10 +12,15 @@
 //! 2. **Hardware-agnostic** — works with any `DrawTarget` implementation
 //! 3. **Configurable** — swap display driver + Screen config to port
 
+#![no_std]
+
+extern crate alloc;
+
 pub mod basis;
 pub mod color;
 pub mod element;
 pub mod fonts;
+#[cfg(feature = "std")]
 pub mod render;
 pub mod widgets;
 
