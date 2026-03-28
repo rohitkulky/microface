@@ -1,0 +1,17 @@
+[package]
+name = "microface-macros"
+version = "0.1.0"
+edition = "2021"
+authors = ["rohitkulky.com"]
+description = "Proc macros for microface — compile-time font rasterization"
+license = "MIT OR Apache-2.0"
+keywords = ["embedded", "fonts", "proc-macro", "no-std"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+fontdue = "0.9"
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"
