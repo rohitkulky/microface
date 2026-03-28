@@ -1,0 +1,26 @@
+[package]
+name = "microface"
+version = "0.1.0"
+edition = "2021"
+authors = ["kulrohit"]
+description = "A simplified, hardware-agnostic interface for embedded graphics in Rust"
+license = "MIT OR Apache-2.0"
+keywords = ["embedded", "graphics", "no-std", "display", "gui"]
+categories = ["embedded", "no-std", "graphics"]
+readme = "README.md"
+
+[workspace]
+members = [".", "microface-macros"]
+
+[dependencies]
+embedded-graphics-core = "0.4.1"
+embedded-graphics = "0.8.2"
+embedded-layout = "0.4.2"
+microface-macros = { path = "microface-macros" }
+
+[features]
+default = ["color"]
+bw = []
+grayscale = []
+color = []
+
