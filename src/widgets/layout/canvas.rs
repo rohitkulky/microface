@@ -57,8 +57,19 @@ pub trait Canvas: OriginDimensions {
         )
     }
 
+    /// A shortcut for `region(0, 0, 100, 100)`.
     fn full(&self) -> Rectangle {
         self.region( 0, 0, 100, 100)
+    }
+
+    /// A shortcut for full row from Y % to Y % 
+    fn full_row(&self, y_from: u32, y_to: u32) -> Rectangle {
+        self.region(0, y_from, 100, y_to - y_from)
+    }
+
+    /// A shortcut for full column from X % to X %
+    fn full_col(&self, x_from: u32, x_to: u32) -> Rectangle {
+        self.region(x_from, 0, x_to - x_from, 100)
     }
 
     /// Carve out a sub-region with clamped dimensions.
