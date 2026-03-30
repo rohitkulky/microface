@@ -42,6 +42,10 @@ required-features = ["std"]
 name = "test_text_stacks"
 required-features = ["std"]
 
+[[example]]
+name = "test_text_element"
+required-features = ["std"]
+
 [profile.release]
 opt-level = "z"        # optimize for size
 lto = true             # link-time optimization — dead code elimination across crates
