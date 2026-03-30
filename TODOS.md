@@ -5,10 +5,10 @@
 ### Core Infrastructure
 - [x] **`no_std` library** — `#![no_std]` with `extern crate alloc`, works on any embedded target
 - [x] **Feature-gated color system** — `color.rs` provides `GraphicsColorMode` type alias + `FG`, `BG`, `ACCENT_PR/SC/TR` constants for `color` (Rgb565), `grayscale` (Gray8), `bw` (BinaryColor)
-- [x] **`Canvas` trait** — percentage-based sizing via blanket impl on `OriginDimensions` in `widgets/layout/canvas.rs`: `wp()`, `hp()`, `w()`, `h()`, `region()`, `region_clamped()`, `canvas_bounds()` — the display itself is the canvas, no separate object needed
+- [x] **`Canvas` trait** — percentage-based sizing via blanket impl on `OriginDimensions` in `widgets/layout/canvas.rs`: `wp()`, `hp()`, `w()`, `h()`, `region()`, `region_clamped()`, `canvas_bounds()`, `full()` — the display itself is the canvas, no separate object needed
 - [x] **Generic `Stack` layout** — `Stack<D: StackDirection>` in `widgets/layout/stack/` with flex-weighted children. `HStack` and `VStack` are type aliases for `Stack<Horizontal>` and `Stack<Vertical>`
 - [x] **Layout helpers** — `hz_stack()`, `vt_stack()`, `gap()`, `even()`, `tight()` in `basis/foundation/layout.rs` wrapping `embedded-layout`
-- [x] **`Element` enum** — dispatch enum (`Empty | Rect | Label`) in `element.rs` for composing UI trees
+- [x] **`Element` enum** — dispatch enum (`Empty | Rect | Label | HStack | VStack`) in `element.rs` for composing UI trees, with `measure()` for intrinsic sizing and `From` impls for ergonomic construction
 - [x] **Rustdoc cleanup** — all modules, structs, traits, and public methods have specific, neutral doc comments; zero `cargo doc` warnings
 
 ### Fonts
@@ -20,7 +20,8 @@
 - [x] **`BitmapTarget`** — headless in-memory framebuffer behind `std` feature in `render/bitmap.rs`. Implements `DrawTarget`, exports 24-bit BMP files
 - [x] **Simulator example** — `examples/test_render_display.rs` opens an SDL2 window via `embedded-graphics-simulator`, renders live clock with multiple font sizes and bpp levels
 - [x] **Headless BMP example** — `examples/test_render.rs` renders to BMP file, gated behind `--features std`
-- [x] **Stack layout example** — `examples/test_stacks.rs` demonstrates HStack/VStack with flex-weighted children in a simulator window
+- [x] **Stack layout example** — `examples/test_stacks.rs` two-column justify & align showcase with Labels, Rects, spacers, and intrinsic sizing
+- [x] **Text positioning example** — `examples/test_text_stacks.rs` demonstrates text at 5 screen positions using VStack, Label, TextAlign, and Canvas::full()
 
 ### Build
 - [x] **Release profile** — `opt-level = "z"`, LTO, single codegen unit, symbol stripping, `panic = "abort"` for minimal binary size
@@ -59,15 +60,15 @@ The `Element` enum dispatches manually. A trait enables:
 - [x] `Start` — pack children at the start (default)
 - [x] `End` — pack children at the end
 - [x] `Center` — center the group along the main axis
-- [ ] `SpaceBetween` — requires Component trait with `measure()` (§1)
-- [ ] `SpaceAround` — requires Component trait with `measure()` (§1)
-- [ ] `SpaceEvenly` — requires Component trait with `measure()` (§1)
+- [ ] `SpaceBetween` — distribute leftover space evenly between children
+- [ ] `SpaceAround` — equal space around each child
+- [ ] `SpaceEvenly` — equal space between and at edges
 
 ### Cross-axis alignment — `.align(Align::*)`
 - [x] `Stretch` — fill the full cross-axis extent (default)
-- [ ] `Start` — enum defined, effective once Component trait provides `measure()`
-- [ ] `End` — enum defined, effective once Component trait provides `measure()`
-- [ ] `Center` — enum defined, effective once Component trait provides `measure()`
+- [x] `Start` — position intrinsic children at start of cross axis
+- [x] `End` — position intrinsic children at end of cross axis
+- [x] `Center` — center intrinsic children on cross axis
 
 ### Spacing
 - [x] `.padding(px)` — inset from bounds on all sides before layout
@@ -78,11 +79,12 @@ The `Element` enum dispatches manually. A trait enables:
 ```rust
 HStack::within(bounds)
     .justify(Justify::Center)
-    .align(Align::Stretch)
+    .align(Align::Center)
     .padding(8)
     .gap(4)
-    .child(Element::Rect(Rect::new()))
-    .child_flex(Element::Rect(Rect::new()), 2)
+    .child(Rect::new())                    // Into<Element> — no wrapping needed
+    .child_flex(Label::new("hi", &FONT), 2)
+    .spacer(3)                             // invisible flex child
     .paint(&mut display)?;
 ```
 
@@ -95,10 +97,10 @@ HStack::within(bounds)
 - [ ] **RoundedRect** — rectangle with corner radius
 - [ ] **Circle** — filled/stroked circle
 - [ ] **Line** — line between two points
-- [ ] **Spacer** — invisible flex element for pushing content apart
+- [x] **Spacer** — invisible flex element for pushing content apart (implemented as `Stack::spacer(flex)` and `Stack::space()`)
 
 ### Text
-- [x] **Label** — single-line text (currently uses `MonoFont`; see §7 for MicroFont migration)
+- [x] **Label** — single-line text with `MicroFont`, `TextAlign` (Left/Center/Right), `measure()` for intrinsic sizing, and `Baseline::Top` rendering
 - [ ] **TextBlock** — multi-line wrapped text via `MicroFontStyle` + `embedded-text::TextBox`
 - [ ] **Badge** — text with background pill/rounded rect
 
@@ -193,10 +195,11 @@ let t = anim.value_at(elapsed_secs); // smooth 0.0 → 1.0
 
 ## 7. Architecture Improvements
 
-- [ ] **Label → MicroFont migration** — `Label` currently takes `&MonoFont`. Add a variant or new widget that uses `MicroFontStyle` for anti-aliased, proportional text with the compile-time font system
+- [x] **Label → MicroFont migration** — `Label` now takes `&MicroFont` and uses `MicroFontStyle` for anti-aliased, proportional text with the compile-time font system
 - [ ] **Replace `Element` enum with `Component` trait** — the manual dispatch in `Element::paint()` doesn't scale. Once the `Component` trait (§1) is implemented, `Element` can be replaced with `Box<dyn Component>` or trait-based generics
 - [ ] **Populate `basis/components/`** — the directory exists but is empty. Intended for reusable composed components (e.g., `StatusBar`, `ListItem`, `Card`) built from primitives + layout
 - [x] **Stack gap/padding** — `.gap(px)` and `.padding(px)` on `Stack` (applies to both HStack and VStack)
 - [ ] **Stroke width on Rect** — `Rect::stroke()` hardcodes `stroke_width(1)`. Add `.stroke_width(px)` builder method
-- [ ] **Label vertical alignment** — `Label::paint()` draws at `bounds.top_left` with no vertical centering. Add baseline/alignment options
+- [x] **Label vertical alignment** — Label supports horizontal `TextAlign` (Left/Center/Right) and vertical positioning via Stack's cross-axis `Align` (Start/Center/End) with intrinsic sizing
+- [ ] **Cache `measure()` results** — `Label::measure()` calls `string_width()` which scans the kerning table (O(N×K) per call). Currently a centered label in a non-Stretch stack gets measured up to 3 times: stack Pass 1 (intrinsic sizing), Pass 3 (cross-axis align), and inside `Label::paint()` (for Center/Right alignment). For short UI labels this is negligible, but could cache the `Size` in a `Cell<Option<Size>>` or pass the measured size from `paint_into` down to `paint()` to avoid redundant work
 - [ ] **Error handling in `Element`** — `Element::paint()` requires `D::Error` to match across all variants. Consider a unified error type or `Component` trait with associated error type
