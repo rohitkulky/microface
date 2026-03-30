@@ -57,6 +57,10 @@ pub trait Canvas: OriginDimensions {
         )
     }
 
+    fn full(&self) -> Rectangle {
+        self.region( 0, 0, 100, 100)
+    }
+
     /// Carve out a sub-region with clamped dimensions.
     ///
     /// Position is percentage-based (no clamp), size is clamped.
