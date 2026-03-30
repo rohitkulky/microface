@@ -17,19 +17,10 @@ ARCHIVE_DIR="../../archives"
 mkdir -p "$ARCHIVE_DIR"
 OUTPUT="$ARCHIVE_DIR/microface_${TIMESTAMP}.zip"
 
-zip -r -P "$PASSWORD" "$OUTPUT" \
-    .gitignore \
-    Cargo.toml \
-    Cargo.lock \
-    TODOS.md \
-    embedded_graphics_ecosystem.md \
-    zip-source.sh \
-    src/ \
-    microface-macros/ \
-    examples/ \
-    fonts/*.ttf \
-    fonts/*.otf \
-    tools/ \
-    -x "*/target/*" "*/.DS_Store" "*.zip" "*.bin" "*.bdf" "*.bmp"
+zip -r -P "$PASSWORD" "$OUTPUT" * \
+    -x "target/*" "*/target/*" \
+    "*/.DS_Store" "*.zip" "*.bin" "*.bdf" "*.bmp" \
+    "GUIDE_TEXT_ELEMENT.md" "ALIGN_ISSUE.md" \
+    "screenshots/*" "tools/*"
 
 echo "Created $OUTPUT ($(du -h "$OUTPUT" | cut -f1))"

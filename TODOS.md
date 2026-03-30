@@ -5,10 +5,10 @@
 ### Core Infrastructure
 - [x] **`no_std` library** — `#![no_std]` with `extern crate alloc`, works on any embedded target
 - [x] **Feature-gated color system** — `color.rs` provides `GraphicsColorMode` type alias + `FG`, `BG`, `ACCENT_PR/SC/TR` constants for `color` (Rgb565), `grayscale` (Gray8), `bw` (BinaryColor)
-- [x] **`Canvas` trait** — percentage-based sizing via blanket impl on `OriginDimensions` in `widgets/layout/canvas.rs`: `wp()`, `hp()`, `w()`, `h()`, `region()`, `region_clamped()`, `canvas_bounds()`, `full()` — the display itself is the canvas, no separate object needed
+- [x] **`Canvas` trait** — percentage-based sizing via blanket impl on `OriginDimensions` in `widgets/layout/canvas.rs`: `wp()`, `hp()`, `w()`, `h()`, `region()`, `region_clamped()`, `canvas_bounds()`, `full()`, `full_row()`, `full_col()` — the display itself is the canvas, no separate object needed
 - [x] **Generic `Stack` layout** — `Stack<D: StackDirection>` in `widgets/layout/stack/` with flex-weighted children. `HStack` and `VStack` are type aliases for `Stack<Horizontal>` and `Stack<Vertical>`
 - [x] **Layout helpers** — `hz_stack()`, `vt_stack()`, `gap()`, `even()`, `tight()` in `basis/foundation/layout.rs` wrapping `embedded-layout`
-- [x] **`Element` enum** — dispatch enum (`Empty | Rect | Label | HStack | VStack`) in `element.rs` for composing UI trees, with `measure()` for intrinsic sizing and `From` impls for ergonomic construction
+- [x] **`Element` enum** — dispatch enum (`Empty | Rect | Label | Text | HStack | VStack`) in `element.rs` for composing UI trees, with `measure()` for intrinsic sizing and `From` impls for ergonomic construction
 - [x] **Rustdoc cleanup** — all modules, structs, traits, and public methods have specific, neutral doc comments; zero `cargo doc` warnings
 
 ### Fonts
@@ -22,6 +22,7 @@
 - [x] **Headless BMP example** — `examples/test_render.rs` renders to BMP file, gated behind `--features std`
 - [x] **Stack layout example** — `examples/test_stacks.rs` two-column justify & align showcase with Labels, Rects, spacers, and intrinsic sizing
 - [x] **Text positioning example** — `examples/test_text_stacks.rs` demonstrates text at 5 screen positions using VStack, Label, TextAlign, and Canvas::full()
+- [x] **Text element example** — `examples/test_text_element.rs` demonstrates single-line and multi-line Text widget with cache verification benchmarks (Label vs Text measure() performance), uses Canvas::full_row()
 
 ### Build
 - [x] **Release profile** — `opt-level = "z"`, LTO, single codegen unit, symbol stripping, `panic = "abort"` for minimal binary size
@@ -101,7 +102,8 @@ HStack::within(bounds)
 
 ### Text
 - [x] **Label** — single-line text with `MicroFont`, `TextAlign` (Left/Center/Right), `measure()` for intrinsic sizing, and `Baseline::Top` rendering
-- [ ] **TextBlock** — multi-line wrapped text via `MicroFontStyle` + `embedded-text::TextBox`
+- [x] **Text** — unified text widget replacing Label's role as primary text element. Supports single-line and multi-line word-wrapped rendering via `embedded-text::TextBox`. Builder methods: `.center()`, `.right()`, `.justified()`, `.max_width(px)`, `.color()`. Implements pretext-inspired `Cell<Option<Size>>` cached measurement — compute once, reuse everywhere. Wired into `Element` enum with `From` impl
+- [x] ~~**TextBlock**~~ — superseded by `Text` widget with `.max_width()` for multi-line mode
 - [ ] **Badge** — text with background pill/rounded rect
 
 ### Layout
@@ -201,5 +203,5 @@ let t = anim.value_at(elapsed_secs); // smooth 0.0 → 1.0
 - [x] **Stack gap/padding** — `.gap(px)` and `.padding(px)` on `Stack` (applies to both HStack and VStack)
 - [ ] **Stroke width on Rect** — `Rect::stroke()` hardcodes `stroke_width(1)`. Add `.stroke_width(px)` builder method
 - [x] **Label vertical alignment** — Label supports horizontal `TextAlign` (Left/Center/Right) and vertical positioning via Stack's cross-axis `Align` (Start/Center/End) with intrinsic sizing
-- [ ] **Cache `measure()` results** — `Label::measure()` calls `string_width()` which scans the kerning table (O(N×K) per call). Currently a centered label in a non-Stretch stack gets measured up to 3 times: stack Pass 1 (intrinsic sizing), Pass 3 (cross-axis align), and inside `Label::paint()` (for Center/Right alignment). For short UI labels this is negligible, but could cache the `Size` in a `Cell<Option<Size>>` or pass the measured size from `paint_into` down to `paint()` to avoid redundant work
+- [x] **Cache `measure()` results** — ~~`Label::measure()` calls `string_width()` which scans the kerning table (O(N×K) per call)~~ → solved in the new `Text` widget via `Cell<Option<Size>>` cache (pretext-inspired). First `measure()` computes, all subsequent calls return cached value. `Label` still uncached but `Text` is the recommended replacement. Benchmarked in `test_text_element` example (10k calls, compute_count stays at 1)
 - [ ] **Error handling in `Element`** — `Element::paint()` requires `D::Error` to match across all variants. Consider a unified error type or `Component` trait with associated error type

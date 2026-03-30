@@ -1,98 +1,97 @@
 # microface
 
-`no_std` UI library for embedded Rust. Widgets, layout, compile-time fonts, percentage-based sizing — all on top of `embedded-graphics`. Works on any `DrawTarget`: AMOLED, LCD, e-ink.
+> ⚠️ **Work in progress** — API is unstable and subject to change.
 
-## What's in the box
+`no_std` UI toolkit for embedded Rust, built on `embedded-graphics`. Percentage-based layout, compile-time fonts, flex stacks — runs on any `DrawTarget`.
 
-- **Screen** — percentage-based sizing so layouts port across resolutions without pixel math
-- **Widgets** — `Rect`, `Label`, `HStack` with flex-weighted children
-- **Element** — unified enum (`Rect | Label | Empty`) for composing UI trees
-- **Compile-time fonts** — `include_font!` rasterizes TTF/OTF at build time, no filesystem or runtime parsing
-- **Color modes** — `Rgb565`, `Gray8`, `BinaryColor` via feature flags. Comes with `FG`, `BG`, `ACCENT_*` constants
-- **Layout helpers** — `hz_stack()`, `vt_stack()`, `gap()`, `even()` wrapping `embedded-layout`
-
-## Usage
-
-```toml
-[dependencies]
-microface = { path = "." }
-embedded-graphics = "0.8"
-```
-
-### Screen & layout
+## Quick look
 
 ```rust
-use microface::Screen;
+use microface::{Canvas, include_font, fonts::MicroFont};
+use microface::widgets::{VStack, Text, Rect};
 
-let screen = Screen::new(368, 448);
+const FONT: MicroFont = include_font!("fonts/Inter.ttf", size = 12, bpp = 2);
 
-let header_h = screen.hp(10);                // 10% of height
-let content  = screen.region(5, 10, 90, 75); // x=5%, y=10%, w=90%, h=75%
+VStack::within(display.full())
+    .padding(8)
+    .gap(4)
+    .child(Text::new("Hello", &FONT).center())
+    .child(Rect::new().color(Rgb565::RED))
+    .space()
+    .paint(&mut display)?;
 ```
 
-### Widgets
+## Why microface
 
-```rust
-use microface::widgets::{HStack, primitives::Rect, text::Label};
-use microface::element::Element;
+Most embedded UI in Rust means stitching together separate crates for layout, text, and fonts — or pulling in a heavy C binding. microface is a single `no_std` crate that handles all three.
 
-HStack::new()
-    .child(Element::Rect(Rect::new()))                     // flex 1
-    .child_flex(Element::Label(Label::new("Hi", &font)), 2) // flex 2
-    .child(Element::Rect(Rect::new()))                     // flex 1
-    .paint(screen.bounds(), &mut display)?;
-```
+|  | microface | embedded-layout | embedded-text | kolibri | lvgl (Rust) | u8g2-fonts |
+|--|-----------|----------------|--------------|---------|-------------|------------|
+| `no_std` | ✅ | ✅ | ✅ | ✅ | ⚠️ C FFI | ✅ |
+| Flex stacks (H/V) | ✅ | — | — | ✅ | ✅ | — |
+| Percentage layout | ✅ | — | — | — | — | — |
+| Compile-time fonts | ✅ | — | — | — | — | — |
+| TTF/OTF support | ✅ build-time | — | — | — | ✅ runtime | — |
+| Word wrap | ✅ | — | ✅ | ✅ | ✅ | — |
+| Cached measurement | ✅ | — | — | — | ✅ | — |
+| Widgets + layout | ✅ | layout only | text only | ✅ | ✅ | fonts only |
+| Binary size | small | small | small | medium | large | small |
+| Runtime deps | none | none | none | alloc | C runtime | none |
 
-### Compile-time fonts
+**Compile-time fonts** are the big one. `include_font!` rasterizes TTF/OTF during `cargo build` — the binary ships pre-rendered glyph bitmaps with no font parser, no filesystem, no allocator needed at runtime. You pick the exact size and bit depth at build time.
 
-```rust
-use microface::{include_font, fonts::{MicroFont, MicroFontStyle}};
+## Features
 
-const DIN: MicroFont = include_font!("fonts/dinroundpro.otf", size = 16, bpp = 4);
+**Layout** — `Canvas` trait gives any display percentage-based regions: `full()`, `full_row(y0, y1)`, `full_col(x0, x1)`, `region(x, y, w, h)`.
 
-let style = MicroFontStyle::new(&DIN, Gray4::WHITE);
-// works with embedded-text TextBox for word wrap + alignment
-```
+**Stacks** — `HStack` and `VStack` with flex weights, justify (Start / End / Center), cross-axis align (Stretch / Start / End / Center), padding, gap, and spacers.
 
-`bpp`: 1 (e-ink), 2, 4 (recommended), 8. Integer scaling via `.scaled(N)`.
+**Text** — Single-line or multi-line word-wrapped via `.max_width(px)`. Alignment: `.left()`, `.center()`, `.right()`, `.justified()`. Measurement is cached.
 
-## Feature Flags
+**Fonts** — `include_font!` rasterizes TTF/OTF at compile time. Supports 1/2/4/8 bpp, proportional widths, kerning, integer scaling via `.scaled(N)`.
 
-| Feature | Color type | Use case |
-|---------|-----------|----------|
-| `color` (default) | `Rgb565` | Color LCDs, AMOLEDs |
+**Color** — Feature-gated: `Rgb565` (default), `Gray8`, `BinaryColor`. Palette constants: `FG`, `BG`, `ACCENT_PR/SC/TR`.
+
+## Feature flags
+
+| Flag | Color type | Target |
+|------|-----------|--------|
+| `color` | `Rgb565` | LCDs, AMOLEDs |
 | `grayscale` | `Gray8` | Grayscale e-ink |
 | `bw` | `BinaryColor` | B&W e-ink |
-| `std` | — | Enables headless `render` module |
+| `std` | — | Headless render, simulator |
 
 ## Examples
 
-Requires SDL2 (`brew install sdl2` / `apt install libsdl2-dev`).
+SDL2 required: `brew install sdl2` or `apt install libsdl2-dev`.
 
 ```bash
-# Live simulator window
-LIBRARY_PATH="$(brew --prefix sdl2)/lib" cargo run --example test_render_display
+export LIBRARY_PATH="$(brew --prefix sdl2)/lib"
 
-# Headless BMP export
-cargo run --example test_render --features std
+cargo run --example test_stacks --features std         # stack layout
+cargo run --example test_text_element --features std   # text + cache bench
+cargo run --example test_text_stacks --features std    # text positioning
+cargo run --example test_render_display --features std # live clock
+cargo run --example test_render --features std         # headless BMP
 ```
 
-## Structure
+## Project layout
 
 ```
-microface/
-├── microface-macros/          # proc macro: include_font!
-├── src/
-│   ├── basis/foundation/      # Screen, layout helpers (hz_stack, vt_stack, gap, even)
-│   ├── widgets/               # HStack, Rect, Label
-│   ├── fonts/                 # MicroFont, MicroFontStyle, TextRenderer impl
-│   ├── color.rs               # feature-gated color types + constants
-│   ├── element.rs             # Element enum
-│   └── render/                # [std] BitmapTarget for headless rendering
-├── fonts/                     # bundled TTF/OTF files
-└── examples/
+src/
+  widgets/layout/canvas.rs     Canvas trait
+  widgets/layout/stack/        HStack, VStack
+  widgets/primitives/          Rect
+  widgets/text/                Label, Text
+  fonts/                       MicroFont, MicroFontStyle
+  color.rs                     Color types + constants
+  element.rs                   Element enum
+  render/                      [std] BitmapTarget
+microface-macros/              include_font! proc macro
+fonts/                         Bundled TTF files
+examples/
 ```
 
 ## License
 
-Apache-2.0
+MIT OR Apache-2.0
