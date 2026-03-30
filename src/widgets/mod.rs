@@ -5,7 +5,7 @@ pub mod text;
 pub mod layout;
 
 pub use primitives::Rect;
-pub use text::{Label, TextAlign};
+pub use text::{Label, TextAlign, Text};
 pub use layout::Canvas;
 pub use layout::HStack;
 pub use layout::VStack;
