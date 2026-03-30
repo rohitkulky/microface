@@ -1,8 +1,13 @@
+//! High-level UI widgets: primitives, text, and layout containers.
+
 pub mod primitives;
 pub mod text;
 pub mod layout;
 
-// Re-export all widgets for convenience
 pub use primitives::Rect;
 pub use text::Label;
+pub use layout::Canvas;
 pub use layout::HStack;
+pub use layout::VStack;
+pub use layout::Justify;
+pub use layout::Align;

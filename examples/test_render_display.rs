@@ -1,4 +1,4 @@
-//! Test rendering — MicroFontStyle + embedded-text TextBox with Gray4 display.
+//! Live clock demo using MicroFontStyle at various sizes in a simulator window.
 
 use embedded_graphics::text::{Alignment, Baseline, Text, TextStyleBuilder};
 use microface::fonts::{MicroFont, MicroFontStyle};

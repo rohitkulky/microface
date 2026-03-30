@@ -1,2 +1,7 @@
-**.DS_Store
-target
+/target
+.DS_Store
+*.zip
+*.bin
+*.bdf
+*.bmp
+zippwd

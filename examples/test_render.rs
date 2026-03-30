@@ -1,4 +1,4 @@
-//! Test rendering — MicroFontStyle + embedded-text TextBox with Gray4 display.
+//! Renders text at multiple bpp levels and exports to BMP.
 
 use microface::fonts::{MicroFont, MicroFontStyle};
 use microface::include_font;
@@ -39,7 +39,7 @@ fn main() {
     }
 
     // Scaled 2×
-    let style_2x = MicroFontStyle::new(&DIN_4, Gray4::new(0x0A)).scaled(2);
+    let style_2x = MicroFontStyle::new(&INTER_4, Gray4::new(0x0A)).scaled(2);
     TextBox::new(
         "Scaled 2x with word wrap!",
         Rectangle::new(Point::new(10, y + 5), Size::new(300, 130)),

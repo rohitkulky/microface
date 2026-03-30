@@ -1,4 +1,14 @@
-/// Decide what color system to use
+//! Color mode selection based on Cargo features.
+//!
+//! Resolves `GraphicsColorMode` and semantic color constants (`FG`, `BG`,
+//! `ACCENT_PR`, `ACCENT_SC`, `ACCENT_TR`) according to the active feature:
+//!
+//! | Feature      | Color type     |
+//! |--------------|----------------|
+//! | *(default)*  | `Rgb565`       |
+//! | `bw`         | `BinaryColor`  |
+//! | `grayscale`  | `Gray8`        |
+//! | `color`      | `Rgb565`       |
 
 use embedded_graphics::pixelcolor;
 

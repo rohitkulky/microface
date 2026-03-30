@@ -30,6 +30,14 @@ bw = []
 grayscale = []
 color = []
 
+[[example]]
+name = "test_render"
+required-features = ["std"]
+
+[[example]]
+name = "test_stacks"
+required-features = ["std"]
+
 [profile.release]
 opt-level = "z"        # optimize for size
 lto = true             # link-time optimization — dead code elimination across crates
